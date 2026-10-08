@@ -1,0 +1,111 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Market Signals V3</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1016;color:#edf2f7;font-family:Arial,sans-serif}
+header{padding:14px 16px;background:#121821;border-bottom:1px solid #27313c;display:flex;justify-content:space-between}
+.logo{font-weight:900}.live{font-size:12px;color:#63e6a2}.wrap{max-width:1150px;margin:auto;padding:12px}
+.row{display:flex;gap:7px;overflow:auto;padding:5px 0}.btn{border:1px solid #303b47;background:#171f29;color:#dce4ec;padding:9px 12px;border-radius:8px;white-space:nowrap}
+.active{border-color:#62d99a;color:#62d99a}.grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.card{background:#121821;border:1px solid #27313c;border-radius:12px;padding:12px;margin-top:10px}
+.chart{height:420px;position:relative}.chart canvas{width:100%;height:100%;display:block}.price{font-size:28px;font-weight:900;margin:5px 0}
+.muted{font-size:11px;color:#84909e}.signal{text-align:center}.action{font-size:34px;font-weight:900;margin:10px}
+.buy{color:#58df95}.sell{color:#ff6d76}.wait{color:#f1c75b}
+.generate{width:100%;padding:15px;border:0;border-radius:10px;background:#263646;color:white;font-weight:900;font-size:16px;margin:12px 0}
+.generate:disabled{opacity:.65}.auto{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px;text-align:left;margin-top:12px}.metric{background:#1a222c;border-radius:7px;padding:9px}
+.metric b{display:block;margin-top:4px}.reason{text-align:left;font-size:12px;margin:6px 0;color:#b9c2cc}
+.notice{font-size:10px;color:#75818e;line-height:1.5}.chart-status{position:absolute;left:8px;top:8px;font-size:10px;color:#84909e;pointer-events:none}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.chart{height:330px}}
+</style></head><body>
+<header><div class="logo">AI MARKET SIGNALS</div><div id="live" class="live">● CONNECTING</div></header>
+<div class="wrap">
+<div class="card"><div class="muted">MARKET TYPE</div><div id="groups" class="row"></div>
+<div class="muted">ASSET</div><div id="names" class="row"></div>
+<div class="muted">TIMEFRAME</div><div id="tfs" class="row"></div></div>
+<div class="grid">
+<div class="card"><div class="muted" id="title">—</div><div id="price" class="price">—</div><div id="updated" class="muted">Waiting for market data</div>
+<div class="chart"><canvas id="cv"></canvas><div id="chartStatus" class="chart-status"></div></div></div>
+<div class="card signal"><div class="muted">AI SIGNAL GENERATOR</div>
+<button id="generate" class="generate" onclick="generate()">⚡ GENERATE SIGNAL</button>
+<div id="action" class="action wait">WAIT</div><div id="confidence" style="font-size:24px;font-weight:900">—%</div><div class="muted">Technical confidence</div>
+<label class="auto"><input id="auto" type="checkbox" onchange="toggleAuto()"> AUTO SIGNAL</label>
+<div class="metrics"><div class="metric">Trend<b id="trend">—</b></div><div class="metric">RSI<b id="rsi">—</b></div><div class="metric">EMA 9<b id="e9">—</b></div><div class="metric">EMA 21<b id="e21">—</b></div><div class="metric">Support<b id="sup">—</b></div><div class="metric">Resistance<b id="res">—</b></div></div>
+<div id="reasons" style="margin-top:12px"></div></div></div>
+<div class="card notice">Uses public market data and technical indicators. Public feeds can be delayed and do not represent Quotex/OTC prices. Signals are analysis, not guaranteed predictions.</div>
+</div>
+<script>
+let S={group:"Forex",name:"EUR/USD",tf:"5m",markets:{},candles:[],analysis:null,auto:false,busy:false};
+const $=x=>document.getElementById(x);
+let ws=null,reconnectTimer=null,timer=null;
+const fmt=x=>Number.isFinite(Number(x))?Number(x).toLocaleString(undefined,{maximumFractionDigits:Number(x)>100?2:6}):"—";
+function connect(){
+  clearTimeout(reconnectTimer);
+  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host);
+  ws.onopen=()=>{$("live").textContent="● LIVE";send({type:"markets"});load()};
+  ws.onclose=()=>{$("live").textContent="● RECONNECTING";reconnectTimer=setTimeout(connect,2000)};
+  ws.onerror=()=>ws.close();
+  ws.onmessage=e=>{try{const m=JSON.parse(e.data);
+    if(m.type==="markets"){S.markets=m.markets;render()}
+    else if(m.type==="data"){S.candles=m.candles||[];S.analysis=m.analysis;show(m);if(m.generated)setBusy(false)}
+    else if(m.type==="error"){setBusy(false);$("live").textContent="● "+m.message;$("chartStatus").textContent=m.message}
+  }catch(_){}};
+}
+function send(x){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(x))}
+function load(){send({type:"load",group:S.group,name:S.name,tf:S.tf})}
+function render(){
+  const groups=Object.keys(S.markets);
+  $("groups").innerHTML=groups.map(g=>`<button class="btn ${g===S.group?"active":""}" onclick="group('${g}')">${g}</button>`).join("");
+  const names=Object.keys(S.markets[S.group]||{});
+  if(names.length&&!names.includes(S.name))S.name=names[0];
+  $("names").innerHTML=names.map(n=>`<button class="btn ${n===S.name?"active":""}" onclick="asset(${JSON.stringify(n)})">${n}</button>`).join("");
+  $("tfs").innerHTML=["1m","5m","15m","30m","1h","4h","1d"].map(t=>`<button class="btn ${t===S.tf?"active":""}" onclick="tf('${t}')">${t}</button>`).join("");
+}
+function group(x){S.group=x;render();load()}
+function asset(x){S.name=x;render();load()}
+function tf(x){S.tf=x;render();load()}
+function setBusy(v){S.busy=v;$("generate").disabled=v;$("generate").textContent=v?"⏳ LOADING LIVE DATA...":"⚡ GENERATE SIGNAL"}
+function generate(){if(S.busy)return;setBusy(true);send({type:"generate",group:S.group,name:S.name,tf:S.tf})}
+function toggleAuto(){S.auto=$("auto").checked;if(timer)clearInterval(timer);if(S.auto)timer=setInterval(load,30000)}
+function show(m){
+  const a=m.analysis;if(!a)return;
+  $("title").textContent=m.name+" • "+m.tf;
+  $("price").textContent=fmt(a.price);
+  $("updated").textContent="Updated "+new Date(m.updated||Date.now()).toLocaleTimeString();
+  $("chartStatus").textContent=(m.candles?.length||0)+" candles";
+  $("action").textContent=a.action;
+  $("action").className="action "+(a.action==="BUY"?"buy":a.action==="SELL"?"sell":"wait");
+  $("confidence").textContent=a.confidence+"%";
+  $("trend").textContent=a.trend;$("rsi").textContent=Number(a.rsi).toFixed(1);
+  $("e9").textContent=fmt(a.ema9);$("e21").textContent=fmt(a.ema21);
+  $("sup").textContent=fmt(a.support);$("res").textContent=fmt(a.resistance);
+  $("reasons").innerHTML=(a.reasons||[]).map(x=>`<div class="reason">• ${x}</div>`).join("");
+  draw(m.candles||[]);
+}
+function draw(c){
+  const cv=$("cv"),r=cv.getBoundingClientRect(),d=Math.max(1,window.devicePixelRatio||1);
+  if(!r.width||!r.height)return;
+  cv.width=Math.round(r.width*d);cv.height=Math.round(r.height*d);
+  const x=cv.getContext("2d");x.setTransform(d,0,0,d,0,0);
+  const w=r.width,h=r.height;x.clearRect(0,0,w,h);
+  x.strokeStyle="#202934";x.lineWidth=1;
+  for(let i=1;i<8;i++){let y=i*h/8;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
+  if(!Array.isArray(c)||c.length<2)return;
+  const a=c.slice(-60),lo=Math.min(...a.map(z=>Number(z.low))),hi=Math.max(...a.map(z=>Number(z.high)));
+  const pad=18,plotH=h-2*pad,range=hi-lo||1,cw=w/a.length;
+  const sy=q=>pad+(hi-q)/range*plotH;
+  x.font="10px Arial";x.textAlign="right";
+  [hi,(hi+lo)/2,lo].forEach(q=>{x.fillStyle="#84909e";x.fillText(fmt(q),w-3,sy(q)-3)});
+  a.forEach((z,i)=>{
+    const o=Number(z.open),hh=Number(z.high),ll=Number(z.low),cl=Number(z.close);
+    if(![o,hh,ll,cl].every(Number.isFinite))return;
+    const px=i*cw+cw/2,up=cl>=o;
+    x.strokeStyle=up?"#58df95":"#ff6d76";x.fillStyle=x.strokeStyle;x.lineWidth=1.5;
+    x.beginPath();x.moveTo(px,sy(hh));x.lineTo(px,sy(ll));x.stroke();
+    const top=Math.min(sy(o),sy(cl)),body=Math.max(3,Math.abs(sy(o)-sy(cl)));
+    const bw=Math.max(3,Math.min(10,cw*.7));x.fillRect(px-bw/2,top,bw,body);
+  });
+}
+addEventListener("resize",()=>draw(S.candles));
+connect();
+</script></body></html>
