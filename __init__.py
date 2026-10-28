@@ -1,1 +1,1 @@
-"""WebSocket object modules for the local Quotex client."""
+"""Module for Quotex API websocket."""
