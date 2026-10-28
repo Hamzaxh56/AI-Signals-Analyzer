@@ -1,16 +1,15 @@
+"""Module for Quotex websocket object."""
+
+
 class Base(object):
-    """Class for base Quotex websocket channel."""
+    """Class for Quotex Base websocket object."""
 
-    def __init__(self, api):
-        """
-        :param api: The instance of :class:`QuotexAPI
-            <quotexpy.api.QuotexAPI>`.
-        """
-        self.api = api
+    def __init__(self):
+        self.__name = None
 
-    def send_websocket_request(self, data):
-        """Send request to Quotex server websocket.
-        :param str data: The websocket channel data.
-        :returns: The instance of :class:`requests.Response`.
+    @property
+    def name(self):
+        """Property to get websocket object name.
+        :returns: The name of websocket object.
         """
-        return self.api.send_websocket_request(data)
+        return self.__name
