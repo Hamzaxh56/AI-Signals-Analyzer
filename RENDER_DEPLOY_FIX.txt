@@ -1,0 +1,13 @@
+Quotex Signal Lab - Render packaging fix
+
+This archive keeps app.py at the repository root and packages the local client
+under quotexpy/. The setup.py discovers quotexpy and its subpackages, including
+WebSocket channels and objects.
+
+On Render, use:
+Build command: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt && python -c "import quotexpy; print(quotexpy.__file__)"
+Start command: PYTHONPATH=. gunicorn --bind 0.0.0.0:$PORT app:app
+
+Do not assume a successful import means live Quotex access works. Test /api/health
+and /api/candles. If live candles cannot be verified, the app must not invent data
+or issue CALL/PUT signals.
